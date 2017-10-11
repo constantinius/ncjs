@@ -2,14 +2,24 @@
   "name": "ncjs",
   "version": "0.0.1",
   "description": "A pure JavaScript netCDF4 reader.",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "webpack index.js dist/bundle.js",
+    "watch": "webpack index.js dist/bundle.js -w",
+    "server": "webpack-dev-server"
   },
   "keywords": [
     "netCDF",
     "reader"
   ],
   "author": "Fabian Schindler",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "webpack": "^3.6.0",
+    "webpack-dev-server": "^2.9.1"
+  },
+  "dependencies": {
+    "iobuffer": "^3.2.0",
+    "left-pad": "^1.1.3"
+  }
 }
