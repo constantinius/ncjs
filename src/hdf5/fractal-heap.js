@@ -10,19 +10,22 @@ class FractalHeap {
     return (Math.log2(this.maximumDirectBlockSize) - Math.log2(this.startingBlockSize)) + 2;
   }
 
-  *iterBlocks(buffer) {
+  * iterBlocks(buffer) {
     if (this.currentNumberOfRowsInIndirectBlock === 0) {
+      // eslint-disable-next-line no-use-before-define
       yield parseFractalHeapDirectBlock(
         buffer, this.addressOfRootBlock, this, this.startingBlockSize
       );
     } else {
+      // eslint-disable-next-line no-use-before-define
       const indirectBlock = parseFractalHeapIndirectBlock(
-        buffer, this.addressOfRootBlock, this, this.startingBlockSize, this.currentNumberOfRowsInRootIndirectBlock
+        buffer, this.addressOfRootBlock, this, this.startingBlockSize,
+        this.currentNumberOfRowsInRootIndirectBlock
       );
       yield* indirectBlock.iterBlocks(buffer, this);
     }
   }
-};
+}
 
 class FractalHeapDirectBlock {
   constructor(address, size, dataOffset) {
@@ -38,18 +41,18 @@ class FractalHeapDirectBlock {
   get dataSize() {
     return this._size - this._dataOffset;
   }
-};
+}
 
 class FractalHeapIndirectBlock {
-  constructor(address, directBlockDescriptors, indirectBlockAddresses, heap) {
+  constructor(address, directBlockDescriptors, indirectBlockAddresses) {
     this._address = address;
     this._directBlockDescriptors = directBlockDescriptors;
     this._indirectBlockAddresses = indirectBlockAddresses;
   }
 
-  *iterBlocks(buffer, heap) {
+  * iterBlocks(buffer, heap) {
     const addresses = [];
-    for (let descriptor of this._directBlockDescriptors) {
+    for (const descriptor of this._directBlockDescriptors) {
       // TODO: filtered blocks
       // TODO: get correct size
 
@@ -57,19 +60,20 @@ class FractalHeapIndirectBlock {
       if (descriptor.address === -1) {
         break;
       }
-      addresses.push(descriptor.address)
+      addresses.push(descriptor.address);
+      // eslint-disable-next-line no-use-before-define
       yield parseFractalHeapDirectBlock(buffer, descriptor.address, heap, 512);
     }
 
-    for (let address of this._indirectBlockAddresses) {
+    for (const address of this._indirectBlockAddresses) {
+      // eslint-disable-next-line no-use-before-define
       const indirectBlock = parseFractalHeapIndirectBlock(
-        buffer, address, heap, size
+        buffer, address, heap, 512
       );
       yield* indirectBlock.iterBlocks(buffer);
     }
   }
-};
-
+}
 
 function parseFractalHeapDirectBlock(buffer, address, heap, size) {
   buffer.pushMark();
@@ -185,8 +189,7 @@ export function parseFractalHeap(buffer, address) {
       ioFilterInformation: ioFiltersEncodedLength ? buffer.readBytes(ioFiltersEncodedLength) : null,
     };
     return new FractalHeap(header);
-
   } finally {
     buffer.popMark();
   }
-};
+}

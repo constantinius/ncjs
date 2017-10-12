@@ -1,4 +1,4 @@
-
+import { inflate } from 'pako/lib/inflate';
 
 function getArrayType(dataType) {
   const cls = dataType['class'];
@@ -24,6 +24,17 @@ function createParser(dataType) {
   const cls = dataType['class'];
   const size = dataType.size;
 
+  // Fixed-Point
+  if (cls === 0) {
+    switch(size) {
+    case 4:
+      return (buffer) => buffer.readFloat32();
+    case 8:
+      return (buffer) => buffer.readFloat64();
+    }
+  }
+
+  // Floating-point
   if (cls === 1) {
     switch(size) {
     case 4:
@@ -33,6 +44,7 @@ function createParser(dataType) {
     }
   }
 
+  // String
   if (cls === 3) {
     switch(dataType.bitField[0] & 0b1111) {
       case 0: // null terminate
@@ -52,16 +64,34 @@ function createParser(dataType) {
 }
 
 
-export function readData(buffer, address, dataType, dataSpace) {
-  const parser = createParser(dataType);
-  const { dimensions } = dataSpace
-  if (dimensions.length === 0) {
-    return parser(buffer);
-  } else {
-    const array = createArray(dataType, dataSpace);
-    for (let i = 0; i < array.length; ++i) {
-      array[i] = parser(buffer);
+function readDataFromBlock(buffer, address, parser, array) {
+  buffer.pushMark();
+  try {
+    buffer.seek(address);
+    if (!array) {
+      return parser(buffer);
+    } else {
+      for (let i = 0; i < array.length; ++i) {
+        array[i] = parser(buffer);
+      }
+      return array;
     }
-    return array;
+  } finally {
+    buffer.popMark();
   }
+}
+
+export function readData(buffer, dataLayout, dataType, dataSpace, filters) {
+  const parser = createParser(dataType);
+  const { dimensions } = dataSpace;
+
+  if (dataLayout.address) {
+    const array = (dimensions.length) ? createArray(dataType, dataSpace) : null;
+    return readDataFromBlock(buffer, dataLayout.address, parser, array);
+  } else if (dataLayout.storageType === 'chunked') {
+    const bTree = parseV1BTreeNode(buffer, dataLayout.bTreeAddress, dimensions.length);
+
+  }
+
+
 }

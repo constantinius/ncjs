@@ -92,11 +92,22 @@ const messageParsers = new Map([
         'Array',
       ];
 
+      // type specific properties
+      let properties = null;
+      if (cls === 0) {
+        properties = {
+          littleEndian: (bitField[0] & 0b01) === 0,
+          offset: buffer.readUint16(),
+          precision: buffer.readUint16(),
+        };
+      }
+
       return {
         className: classNames[cls],
         'class': cls,
         bitField,
         size,
+        properties,
         // parser(buffer) {
         //   if (cls === 1 && size === 4) {
         //     return buffer.readFloat32();
@@ -171,11 +182,17 @@ const messageParsers = new Map([
         let storageType;
         switch (buffer.readByte()) {
           case 0: // compact storage
-            storageType = 'compact';
-            break;
+            return {
+              storageType: 'compact',
+              size: buffer.readUint16(),
+              address: buffer.offset,
+            };
           case 1: // contiguous storage
-            storageType = 'contiguous';
-            break;
+            return {
+              storageType: 'contiguous',
+              address: buffer.readOffset(),
+              size: buffer.readLength(),
+            };
           case 2: { // chunked storage
             storageType = 'chunked';
             const dimensionality = buffer.readByte();
@@ -229,19 +246,22 @@ const messageParsers = new Map([
         buffer.skip(6);
         // TODO: implement
       } else if (version === 2) {
-        const filterId = buffer.readUint16();
-        const nameLength = (filterId < 256) ? null : buffer.readUint16();
-        const flags = buffer.readUint16();
-        const numberOfClientDataValues = buffer.readUint16();
+        for (let i = 0; i < numberOfFilters; ++i) {
+          const id = buffer.readUint16();
+          const nameLength = (id < 256) ? null : buffer.readUint16();
+          const flags = buffer.readUint16();
+          const numberOfClientDataValues = buffer.readUint16();
 
-        const name = nameLength ? buffer.readChars(nameLength) : '';
-        const clientData = numberOfClientDataValues ? buffer.readBytes(4 * numberOfClientDataValues) : null;
-        return {
-          filterId,
-          filterFlags: flags,
-          filterName: name,
-          filterClientData: clientData.buffer,
-        };
+          const name = nameLength ? buffer.readChars(nameLength) : '';
+          const clientData = numberOfClientDataValues ? buffer.readBytes(4 * numberOfClientDataValues) : null;
+          filters.push({
+            id,
+            flags,
+            name,
+            clientData: clientData.buffer,
+          });
+        }
+        return { filters };
       }
     }
   }],
@@ -270,7 +290,9 @@ const messageParsers = new Map([
         buffer.skip(dataSpaceSize);
 
         // const value = dataType.parser(buffer);
-        const value = readData(buffer, buffer.offset, dataType, dataSpace);
+        const value = readData(
+          buffer, { address: buffer.offset }, dataType, dataSpace
+        );
         return { attributeName: name, attributeValue: value };
       }
     }
@@ -333,7 +355,7 @@ const messageParsers = new Map([
 ]);
 
 export function parseMessage(buffer, type, size, flags) {
-  const {name, parse} = messageParsers.get(type) || {};
+  const { name, parse } = messageParsers.get(type) || {};
   let parameters = null;
   if (name && parse) {
     buffer.pushMark();
@@ -349,4 +371,15 @@ export function parseMessage(buffer, type, size, flags) {
   }
   buffer.skip(size);
   return new Message(type, parameters);
+}
+
+export function parseSharedMessage(buffer, type, size, flags) {
+  buffer.pushMark();
+  const [version, sharedType] = buffer.readBytes(2);
+  if (version === 1) {
+    buffer.skip(6);
+  }
+  buffer.popMark();
+  buffer.skip(size);
+
 }

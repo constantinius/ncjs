@@ -16,6 +16,7 @@ class V1Node {
     if (this._leftSiblingAddress === -1) {
       return null;
     }
+    // eslint-disable-next-line no-use-before-define
     return parseV1BTreeNode(buffer, this._leftSiblingAddress, this._dimensionality);
   }
 
@@ -23,19 +24,20 @@ class V1Node {
     if (this._rightSiblingAddress === -1) {
       return null;
     }
+    // eslint-disable-next-line no-use-before-define
     return parseV1BTreeNode(buffer, this._rightSiblingAddress, this._dimensionality);
   }
 }
 
 class V1GroupNode extends V1Node {
   constructor(level, leftSiblingAddress, rightSiblingAddress, dimensionality) {
-    super(level, leftSiblingAddress, rightSiblingAddress);
+    super(level, leftSiblingAddress, rightSiblingAddress, dimensionality);
   }
 }
 
 class V1RawDataChunkNode extends V1Node {
   constructor(level, leftSiblingAddress, rightSiblingAddress, dimensionality) {
-    super(level, leftSiblingAddress, rightSiblingAddress);
+    super(level, leftSiblingAddress, rightSiblingAddress, dimensionality);
   }
 }
 
@@ -57,8 +59,7 @@ export function parseV1BTreeNode(buffer, address, dimensionality) {
         leftSiblingAddress,
         rightSiblingAddress,
       });
-    } else {
-
+    } else if (type === 1) {
       function readKey(buffer, dimensionality) {
         const chunkSize = buffer.readUint32();
         const filterMask = buffer.readUint32();
@@ -97,20 +98,18 @@ export function parseV1BTreeNode(buffer, address, dimensionality) {
   }
 }
 
-
-
 function parseRecords(buffer, type, numberOfRecords) {
-  // 1	This B-tree is used for indexing indirectly accessed, non-filtered ‘huge’ fractal heap objects.
-  // 2	This B-tree is used for indexing indirectly accessed, filtered ‘huge’ fractal heap objects.
-  // 3	This B-tree is used for indexing directly accessed, non-filtered ‘huge’ fractal heap objects.
-  // 4	This B-tree is used for indexing directly accessed, filtered ‘huge’ fractal heap objects.
-  // 5	This B-tree is used for indexing the ‘name’ field for links in indexed groups.
-  // 6	This B-tree is used for indexing the ‘creation order’ field for links in indexed groups.
-  // 7	This B-tree is used for indexing shared object header messages.
-  // 8	This B-tree is used for indexing the ‘name’ field for indexed attributes.
-  // 9	This B-tree is used for indexing the ‘creation order’ field for indexed attributes.
-  // 10	This B-tree is used for indexing chunks of datasets with no filters and with more than one dimension of unlimited extent.
-  // 11	This B-tree is used for indexing chunks of datasets with filters and more than one dimension of unlimited extent.
+  // 1  This B-tree is used for indexing indirectly accessed, non-filtered ‘huge’ fractal heap objects.
+  // 2  This B-tree is used for indexing indirectly accessed, filtered ‘huge’ fractal heap objects.
+  // 3  This B-tree is used for indexing directly accessed, non-filtered ‘huge’ fractal heap objects.
+  // 4  This B-tree is used for indexing directly accessed, filtered ‘huge’ fractal heap objects.
+  // 5  This B-tree is used for indexing the ‘name’ field for links in indexed groups.
+  // 6  This B-tree is used for indexing the ‘creation order’ field for links in indexed groups.
+  // 7  This B-tree is used for indexing shared object header messages.
+  // 8  This B-tree is used for indexing the ‘name’ field for indexed attributes.
+  // 9  This B-tree is used for indexing the ‘creation order’ field for indexed attributes.
+  // 10 This B-tree is used for indexing chunks of datasets with no filters and with more than one dimension of unlimited extent.
+  // 11 This B-tree is used for indexing chunks of datasets with filters and more than one dimension of unlimited extent.
   const records = [];
   for (let i = 0; i < numberOfRecords; ++i) {
     let record;
@@ -181,7 +180,6 @@ function parseV2BTreeNode(buffer, address, recordSize, numberOfRecords) {
 }
 
 export function parseV2BTreeHeader(buffer, address) {
-
   buffer.pushMark();
   try {
     buffer.seek(address);

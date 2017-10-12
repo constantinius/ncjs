@@ -1,7 +1,6 @@
 import { parseFractalHeap } from './fractal-heap';
-import { parseV1BTreeNode, parseV2BTreeHeader } from './b-tree';
-import { parseMessage } from './message';
-
+import { parseMessage, parseSharedMessage } from './message';
+import { readData } from './data-reading';
 
 class DataObject {
   constructor(buffer, times, attributeLimits, messages) {
@@ -49,14 +48,13 @@ class DataObject {
     return null;
   }
 
-  *getLinks() {
+  * getLinks() {
     const linkInfoMessage = this.getMessage(0x0002);
     if (linkInfoMessage) {
       const heap = parseFractalHeap(this._buffer, linkInfoMessage.fractalHeapAddress);
 
-      for (let block of heap.iterBlocks(this._buffer)) {
-        const dataAddress = block.dataAddress;
-        const dataSize = block.dataSize;
+      for (const block of heap.iterBlocks(this._buffer)) {
+        const { dataAddress, dataSize } = block;
         this._buffer.pushMark();
         try {
           this._buffer.seek(dataAddress);
@@ -71,15 +69,17 @@ class DataObject {
   }
 
   getChildObject(name) {
-    for (let link of this.getLinks()) {
+    for (const link of this.getLinks()) {
       if (link.linkName === name) {
         if (link.linkType === 'soft') {
           return this.getChildObject(link.address);
         } else if (link.linkType === 'hard') {
+          // eslint-disable-next-line no-use-before-define
           return parseObjectHeader(this._buffer, link.address);
-        };
+        }
       }
     }
+    return null;
   }
 
   getChildNames() {
@@ -89,7 +89,7 @@ class DataObject {
   getAttributes() {
     const attributeMessages = this._messages.filter(message => message.type === 0x000C);
     const attributes = {};
-    for (let attributeMessage of attributeMessages) {
+    for (const attributeMessage of attributeMessages) {
       attributes[attributeMessage.attributeName] = attributeMessage.attributeValue;
     }
     return attributes;
@@ -97,9 +97,12 @@ class DataObject {
 
   readData() {
     const dataLayoutMessage = this._messages.find(message => message.type === 0x0008);
-    if (dataLayoutMessage.storageType === 'chunked') {
-      parseV1BTreeNode(this._buffer, dataLayoutMessage.bTreeAddress, dataLayoutMessage.dimensionality);
-    }
+    const dataTypeMessage = this._messages.find(message => message.type === 0x0003);
+    const dataSpaceMessage = this._messages.find(message => message.type === 0x0001);
+    const filterMessages = this._messages.find(message => message.type === 0x000B);
+    return readData(
+      this._buffer, dataLayoutMessage, dataTypeMessage, dataSpaceMessage, filterMessages.filters
+    );
   }
 }
 
@@ -121,7 +124,12 @@ function parseObjectHeaderContinuationBlock(buffer, address, length) {
       if (messageFlags & 0b0100) {
         buffer.skip(2);
       }
-      messages.push(parseMessage(buffer, messageType, messageSize, messageFlags));
+
+      if (messageFlags & 0b10) {
+        messages.push(parseSharedMessage(buffer, messageType, messageSize, messageFlags));
+      } else {
+        messages.push(parseMessage(buffer, messageType, messageSize, messageFlags));
+      }
     }
     return messages;
   } finally {
@@ -134,7 +142,6 @@ export function parseObjectHeader(buffer, address) {
   buffer.seek(address);
 
   try {
-    const group = {};
     if (buffer.readChars(4) !== 'OHDR') {
       throw new Error(`Location ${address.toString(16)} is not an object.`);
     }
@@ -191,7 +198,7 @@ export function parseObjectHeader(buffer, address) {
       }
     }
 
-    for (let message of continuationMessages) {
+    for (const message of continuationMessages) {
       messages = messages.concat(
         parseObjectHeaderContinuationBlock(buffer, message.offset, message.length)
       );
