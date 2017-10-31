@@ -127,7 +127,7 @@ function createParser(dataType) {
   // Compound
   if (cls === 6) {
     const memberParsers = dataType.properties.members.map(
-      memberDataType => createParser(memberDataType)
+      memberDataType => createParser(memberDataType.type)
     );
     return buffer => memberParsers.map(memberParser => memberParser(buffer));
   }

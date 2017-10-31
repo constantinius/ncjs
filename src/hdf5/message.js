@@ -117,8 +117,12 @@ const messageParsers = new Map([
               name += char;
             }
 
+            // skip unused offset
             buffer.skip(Math.ceil(Math.log2(size) / 8));
-            members.push(messageParsers.get(0x0003).parse(buffer));
+            members.push({
+              name,
+              type: messageParsers.get(0x0003).parse(buffer),
+            });
           }
           properties = { members };
         }
