@@ -1,0 +1,17 @@
+<html>
+<head>
+  <link rel="stylesheet" href="https://openlayers.org/en/v4.4.2/css/ol.css" type="text/css">
+</head>
+<body>
+  <script src="test.bundle.js"></script>
+  <script>
+  // loadNetCDF('20120102-ESACCI-L3C_AEROSOL-AER_PRODUCTS-AATSR-ENVISAT-ORAC-DAILY-fv04.01.nc');
+  loadNetCDF('SDR_04.nc');
+  </script>
+
+  <!-- Please select a dataset from the netCDF file <a href="20120102-ESACCI-L3C_AEROSOL-AER_PRODUCTS-AATSR-ENVISAT-ORAC-DAILY-fv04.01.nc">20120102-ESACCI-L3C_AEROSOL-AER_PRODUCTS-AATSR-ENVISAT-ORAC-DAILY-fv04.01.nc</a>: <select id="datasets"></select> (ANG550_870_mean looks nice) -->
+  Please select a dataset from the netCDF file <a href="SDR_04.nc">SDR_04.nc</a>: <select id="datasets"></select> (ANG550_870_mean looks nice)
+  <div id="map" style="width: 100%; height: 100%px"></div>
+  <canvas id="image"/>
+</body>
+</html>
