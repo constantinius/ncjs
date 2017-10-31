@@ -12,6 +12,7 @@ class Message {
   }
 
   get name() {
+    // eslint-disable-next-line no-use-before-define
     const parser = messageParsers.get(this.type);
     if (parser) {
       return parser.name;
@@ -20,7 +21,7 @@ class Message {
   }
 
   get parameters() {
-    return this._parameters
+    return this._parameters;
   }
 }
 
@@ -28,9 +29,13 @@ const messageParsers = new Map([
   [0x0001, {
     name: 'Dataspace',
     parse(buffer) {
-      const [version, dimensionality, flags, reserved] = buffer.readBytes(4);
+      const [version, dimensionality, flags, dataSpaceType] = buffer.readBytes(4);
 
-      const dimensions = (new Array(dimensionality)).map(() => { return {}; });
+      if (version === 1) {
+        buffer.skip(4);
+      }
+
+      const dimensions = (new Array(dimensionality)).map(() => ({}));
       for (let i = 0; i < dimensionality; ++i) {
         dimensions[i] = {
           size: buffer.readLength(),
@@ -39,33 +44,31 @@ const messageParsers = new Map([
 
       if (flags & 0b01) {
         for (let i = 0; i < dimensionality; ++i) {
-          dimensions[i].maxSize =  buffer.readLength();
+          dimensions[i].maxSize = buffer.readLength();
         }
       }
 
-      if (flags & 0b10) {
+      if (version === 1 && flags & 0b10) {
         for (let i = 0; i < dimensionality; ++i) {
           dimensions[i].permutationIndex = buffer.readLength();
         }
       }
 
-      return { dimensions };
+      return { dimensions, dataSpaceType };
     }
   }],
 
   [0x0002, {
     name: 'Link Info',
     parse(buffer) {
-      const [version, flags] = buffer.readBytes(2);
+      const [, flags] = buffer.readBytes(2);
 
       return {
         maximumCreationIndex: (flags & 0b01) ? buffer.readUint64() : null,
         fractalHeapAddress: buffer.readOffset(),
         v2BTreeNameIndex: buffer.readOffset(),
         v2BTreeCreationOrderIndex: (flags & 0b10) ? buffer.readOffset() : null,
-      }
-      // parseFractalHeap(buffer, offsetSize, lengthsSize, fractalHeapAddress, messageParsers.get(0x0006).parse);
-      // parseV2BTreeHeader(buffer, offsetSize, lengthsSize, v2BTreeNameIndex);
+      };
     }
   }],
 
@@ -100,6 +103,40 @@ const messageParsers = new Map([
           offset: buffer.readUint16(),
           precision: buffer.readUint16(),
         };
+      } else if (cls === 6) { // Compound
+        const memberCount = (bitField[1] << 8) + bitField[0];
+        if (version === 1) {
+          // TODO: implement
+        } else if (version === 2) {
+          // TODO: implement
+        } else if (version === 3) {
+          const members = [];
+          for (let i = 0; i < memberCount; ++i) {
+            let name = '';
+            for (let char = buffer.readChar(); char !== '\0'; char = buffer.readChar()) {
+              name += char;
+            }
+
+            buffer.skip(Math.ceil(Math.log2(size) / 8));
+            members.push(messageParsers.get(0x0003).parse(buffer));
+          }
+          properties = { members };
+        }
+      } else if (cls === 7) { // Reference
+        const [bits0to7] = bitField;
+        const type = bits0to7 & 0b00001111;
+        properties = {
+          object: type === 0,
+        };
+      } else if (cls === 9) { // Variable-Length
+        const [bits0to7] = bitField;
+        const type = bits0to7 & 0b00001111;
+
+        if (type === 0) { // sequence
+          properties = {
+            baseType: messageParsers.get(0x0003).parse(buffer),
+          };
+        }
       }
 
       return {
@@ -126,7 +163,23 @@ const messageParsers = new Map([
   [0x0005, {
     name: 'Fill Value',
     parse(buffer) {
-      const [version, spaceAllocationTime, fillValueWriteTime, fillValueDefined] = buffer.readBytes(4);
+      const version = buffer.readByte();
+      let fillValueAddress = null;
+      if (version === 1 || version === 2) {
+        const [, , fillValueDefined] = buffer.readBytes(3);
+        if (fillValueDefined) {
+          buffer.skip(4);
+          fillValueAddress = buffer.offset;
+        }
+      } else if (version === 3) {
+        const flags = buffer.readByte();
+        if (flags & 0b00100000) {
+          buffer.skip(4);
+          fillValueAddress = buffer.offset;
+        }
+      }
+
+      return { fillValueAddress };
     }
   }],
 
@@ -140,7 +193,9 @@ const messageParsers = new Map([
       const charSet = (flags & 0b00010000) ? buffer.readChar() : 0;
       const lengthOfLinkName = buffer.readUintVar(1 << (flags & 0x0011));
 
-      const linkName = (charSet === 0) ? buffer.readChars(lengthOfLinkName) : buffer.readUtf8(lengthOfLinkName);
+      const linkName = (charSet === 0)
+        ? buffer.readChars(lengthOfLinkName)
+        : buffer.readUtf8(lengthOfLinkName);
 
       if (linkType === 0) { // hard links
         return {
@@ -214,6 +269,8 @@ const messageParsers = new Map([
           case 3: // virtual storage
             storageType = 'virtual';
             break;
+          default:
+            break;
         }
       }
     }
@@ -253,7 +310,10 @@ const messageParsers = new Map([
           const numberOfClientDataValues = buffer.readUint16();
 
           const name = nameLength ? buffer.readChars(nameLength) : '';
-          const clientData = numberOfClientDataValues ? buffer.readBytes(4 * numberOfClientDataValues) : null;
+          const clientData = numberOfClientDataValues
+            ? buffer.readBytes(4 * numberOfClientDataValues)
+            : null;
+
           filters.push({
             id,
             flags,
@@ -268,16 +328,23 @@ const messageParsers = new Map([
 
   [0x000C, {
     name: 'Attribute',
-    parse(buffer) {
+    parse(buffer) {
       const [version, flags] = buffer.readBytes(2);
       const nameSize = buffer.readUint16();
       const dataTypeSize = buffer.readUint16();
       const dataSpaceSize = buffer.readUint16();
 
       if (version === 1) {
-
       } else if (version === 3) {
-        const name = (buffer.readByte() === 0) ? buffer.readChars(nameSize) : buffer.readUtf8(nameSize);
+        let name = (buffer.readByte() === 0)
+          ? buffer.readChars(nameSize)
+          : buffer.readUtf8(nameSize);
+
+        if (name.charCodeAt(name.length - 1) === 0) {
+          name = name.slice(0, -1);
+        }
+
+        console.log(`Attribute name: '${name}'`)
         // if ((flags & 0b01) === 0) {
         buffer.pushMark();
         const dataType = messageParsers.get(0x0003).parse(buffer);
@@ -367,7 +434,7 @@ export function parseMessage(buffer, type, size, flags) {
     }
     buffer.popMark();
   } else {
-    console.log('unsupported message', (name) ? name : '', `0x${leftPad(type.toString(16), 4, '0')}`)
+    console.log('unsupported message', name || '', `0x${leftPad(type.toString(16), 4, '0')}`)
   }
   buffer.skip(size);
   return new Message(type, parameters);

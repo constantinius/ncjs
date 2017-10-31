@@ -36,10 +36,31 @@ class V1GroupNode extends V1Node {
 }
 
 class V1RawDataChunkNode extends V1Node {
-  constructor(level, leftSiblingAddress, rightSiblingAddress, dimensionality) {
+  constructor(level, leftSiblingAddress, rightSiblingAddress, dimensionality, children, keys) {
     super(level, leftSiblingAddress, rightSiblingAddress, dimensionality);
+    this._children = children;
+    this._keys = keys;
+  }
+
+  get children() {
+    return this._children;
+  }
+
+  get keys() {
+    return this._keys;
   }
 }
+
+function readRawDataChunkKey(buffer, dimensionality) {
+  const chunkSize = buffer.readUint32();
+  const filterMask = buffer.readUint32();
+  const chunkOffsets = [];
+  for (let i = 0; i <= dimensionality; ++i) {
+    chunkOffsets[i] = buffer.readUint64();
+  }
+  return { chunkSize, filterMask, chunkOffsets };
+}
+
 
 export function parseV1BTreeNode(buffer, address, dimensionality) {
   buffer.pushMark();
@@ -60,21 +81,10 @@ export function parseV1BTreeNode(buffer, address, dimensionality) {
         rightSiblingAddress,
       });
     } else if (type === 1) {
-      function readKey(buffer, dimensionality) {
-        const chunkSize = buffer.readUint32();
-        const filterMask = buffer.readUint32();
-        const chunkOffsets = [];
-        for (let i = 0; i < dimensionality; ++i) {
-          chunkOffsets[i] = buffer.readUint64();
-        }
-        return { chunkSize, filterMask, chunkOffsets };
-      }
-
-
       const keys = [];
       const children = [];
       for (let j = 0; j < entriesUsed; ++j) {
-        keys.push(readKey(buffer, dimensionality));
+        keys.push(readRawDataChunkKey(buffer, dimensionality));
         // const chunkSize = buffer.readUint32();
         // const filterMask = buffer.readUint32();
         // const chunkOffsets = [];
@@ -84,18 +94,20 @@ export function parseV1BTreeNode(buffer, address, dimensionality) {
         // children.push({chunkSize, filterMask, chunkOffsets});
         children.push(buffer.readOffset());
       }
-      keys.push(readKey(buffer, dimensionality));
+      keys.push(readRawDataChunkKey(buffer, dimensionality));
       return new V1RawDataChunkNode(
         level,
         leftSiblingAddress,
         rightSiblingAddress,
         dimensionality,
         children,
+        keys,
       );
     }
   } finally {
     buffer.popMark();
   }
+  return null;
 }
 
 function parseRecords(buffer, type, numberOfRecords) {

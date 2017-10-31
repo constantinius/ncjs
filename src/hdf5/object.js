@@ -1,6 +1,7 @@
 import { parseFractalHeap } from './fractal-heap';
 import { parseMessage, parseSharedMessage } from './message';
-import { readData } from './data-reading';
+import { readData, readSingleValue } from './data-reading';
+import { parseGlobalHeapCollection } from './global-heap';
 
 class DataObject {
   constructor(buffer, times, attributeLimits, messages) {
@@ -50,7 +51,7 @@ class DataObject {
 
   * getLinks() {
     const linkInfoMessage = this.getMessage(0x0002);
-    if (linkInfoMessage) {
+    if (linkInfoMessage && linkInfoMessage.fractalHeapAddress !== -1) {
       const heap = parseFractalHeap(this._buffer, linkInfoMessage.fractalHeapAddress);
 
       for (const block of heap.iterBlocks(this._buffer)) {
@@ -64,6 +65,10 @@ class DataObject {
         } finally {
           this._buffer.popMark();
         }
+      }
+    } else {
+      for (const linkMessage of this._messages.filter(message => message.type === 0x0006)) {
+        yield linkMessage;
       }
     }
   }
@@ -95,18 +100,57 @@ class DataObject {
     return attributes;
   }
 
+  getAttribute(name) {
+    const attributeMessage = this._messages.find(message => message.attributeName === name);
+    if (attributeMessage) {
+      return attributeMessage.attributeValue;
+    }
+    return null;
+  }
+
+  getFillValue() {
+    const fillValueMessage = this._messages.find(message => message.type === 0x0005);
+    if (fillValueMessage && fillValueMessage.fillValueAddress) {
+      return readSingleValue(this._buffer, this.dataType, fillValueMessage.fillValueAddress);
+    }
+    return null;
+  }
+
+  get dataSpace() {
+    return this._messages.find(message => message.type === 0x0001);
+  }
+
+  get dataType() {
+    return this._messages.find(message => message.type === 0x0003);
+  }
+
   readData() {
     const dataLayoutMessage = this._messages.find(message => message.type === 0x0008);
-    const dataTypeMessage = this._messages.find(message => message.type === 0x0003);
-    const dataSpaceMessage = this._messages.find(message => message.type === 0x0001);
-    const filterMessages = this._messages.find(message => message.type === 0x000B);
+    const filterMessage = this._messages.find(message => message.type === 0x000B);
     return readData(
-      this._buffer, dataLayoutMessage, dataTypeMessage, dataSpaceMessage, filterMessages.filters
+      this._buffer, dataLayoutMessage, this.dataType, this.dataSpace,
+      filterMessage ? filterMessage.filters : null
     );
+  }
+
+  getDimensionObject(index) {
+    const dimensionList = this.getAttribute('DIMENSION_LIST');
+    if (dimensionList && dimensionList[index * 2] > 0) {
+      const globalHeap = parseGlobalHeapCollection(
+        this._buffer, dimensionList[index] - 1,
+        buffer => buffer.readOffset(),
+      );
+      // eslint-disable-next-line no-use-before-define
+      return parseObjectHeader(
+        this._buffer,
+        globalHeap.get(dimensionList[(index * 2) + 1]).data,
+      );
+    }
+    return null;
   }
 }
 
-function parseObjectHeaderContinuationBlock(buffer, address, length) {
+function parseObjectHeaderContinuationBlock(buffer, address, length, creationOrderTracked) {
   buffer.pushMark();
   try {
     buffer.seek(address);
@@ -114,23 +158,39 @@ function parseObjectHeaderContinuationBlock(buffer, address, length) {
       throw new Error(`Location ${address.toString(16)} is not an object header continuation block.`);
     }
 
-    const messages = [];
+    let messages = [];
+    const continuationMessages = [];
     const initialOffset = buffer.offset;
     while (buffer.offset + 4 < address + length) {
       const messageType = buffer.readByte();
       const messageSize = buffer.readUint16();
       const messageFlags = buffer.readByte();
 
-      if (messageFlags & 0b0100) {
+      if (creationOrderTracked) {
         buffer.skip(2);
       }
 
+      let message;
       if (messageFlags & 0b10) {
-        messages.push(parseSharedMessage(buffer, messageType, messageSize, messageFlags));
+        message = parseSharedMessage(buffer, messageType, messageSize, messageFlags);
       } else {
-        messages.push(parseMessage(buffer, messageType, messageSize, messageFlags));
+        message = parseMessage(buffer, messageType, messageSize, messageFlags);
+      }
+      messages.push(message);
+
+      if (messageType === 0x0010) {
+        continuationMessages.push(message);
       }
     }
+
+    for (const message of continuationMessages) {
+      messages = messages.concat(
+        parseObjectHeaderContinuationBlock(
+          buffer, message.offset, message.length, creationOrderTracked
+        )
+      );
+    }
+
     return messages;
   } finally {
     buffer.popMark();
@@ -200,7 +260,9 @@ export function parseObjectHeader(buffer, address) {
 
     for (const message of continuationMessages) {
       messages = messages.concat(
-        parseObjectHeaderContinuationBlock(buffer, message.offset, message.length)
+        parseObjectHeaderContinuationBlock(
+          buffer, message.offset, message.length, creationOrderTracked
+        )
       );
     }
 

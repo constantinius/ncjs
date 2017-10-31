@@ -5,7 +5,9 @@ export default class HDF5IOBuffer extends IOBuffer64 {
     super(buffer);
     this._offsetSize = offsetSize;
     this._lengthsSize = lengthsSize;
-    this.seek(buffer.offset);
+    if (buffer.offset) {
+      this.seek(buffer.offset);
+    }
   }
 
   get offsetSize() {
